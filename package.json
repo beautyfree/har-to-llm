@@ -18,11 +18,11 @@
     "llm",
     "converter",
     "http",
-    "archive",
     "api",
-    "requests"
+    "requests",
+    "deduplication"
   ],
-  "author": "Your Name",
+  "author": "Alexey Elizarov",
   "license": "MIT",
   "dependencies": {
     "commander": "^11.1.0",
