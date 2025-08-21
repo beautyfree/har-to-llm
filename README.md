@@ -48,6 +48,53 @@ har-to-llm ./file.har --exclude-domains google-analytics.com,facebook.com
 har-to-llm ./file.har --min-duration 100 --max-duration 5000
 ```
 
+### Deduplication Options
+
+```bash
+# Default behavior: automatically remove semantically similar requests
+har-to-llm ./file.har
+
+# Disable deduplication to keep all requests
+har-to-llm ./file.har --no-deduplicate
+
+# Verbose output shows deduplication statistics
+har-to-llm ./file.har --verbose
+```
+
+**Note:** By default, the tool uses **semantic deduplication** optimized for LLM training:
+
+**Semantic deduplication removes requests that follow the same pattern:**
+- Same HTTP method
+- Same URL pattern (ignoring specific IDs: `/users/1`, `/users/2` → `/users/{id}`)
+- Same query parameter structure (names match, values can differ)
+- Same request body structure (JSON keys match, values can differ)
+- Same header structure (header names match, values can differ)
+
+**Examples of semantic deduplication:**
+- `GET /users/1`, `GET /users/2`, `GET /users/3` → keeps only `GET /users/{id}`
+- `POST /users` with different user data → keeps only one example
+- `PUT /users/1` with different update data → keeps only one example
+
+This ensures LLM training data contains unique API patterns without redundancy.
+
+### Header Filtering
+
+The tool automatically filters out headers that are not useful for API implementation:
+
+**Excluded headers include:**
+- Browser-specific: `User-Agent`, `Accept`, `Accept-Language`, `Accept-Encoding`, `Cache-Control`, `Origin`, `Referer`
+- Network: `Connection`, `Keep-Alive`, `Transfer-Encoding`, `Content-Length`, `Date`, `Server`
+- Security: `X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Protection`, `Strict-Transport-Security`
+- Caching: `ETag`, `Last-Modified`, `If-Modified-Since`, `If-None-Match`
+- Analytics: `X-Forwarded-For`, `X-Real-IP`, `X-Requested-With`
+- CDN/Proxy: `CF-Ray`, `X-Cache`, `X-Amz-Cf-Id`
+
+**Kept headers include:**
+- Authentication: `Authorization`, `X-API-Key`
+- Content: `Content-Type`
+- Custom API headers: `X-Custom-Header`, `X-Rate-Limit-*`, `X-Request-ID`
+- Response headers: `Location`, `Set-Cookie`
+
 ### Output Formats
 
 - **markdown** (default): Human-readable markdown format
@@ -74,6 +121,9 @@ har-to-llm ./file.har --summary
 
 # Verbose output with filtering
 har-to-llm ./file.har --verbose --domains api.example.com --min-duration 500
+
+# Keep all requests including semantically similar ones
+har-to-llm ./file.har --no-deduplicate --verbose
 ```
 
 ## Programmatic Usage
@@ -86,17 +136,30 @@ import * as fs from 'fs';
 const harContent = fs.readFileSync('./file.har', 'utf8');
 const harData = JSON.parse(harContent);
 
-// Convert entries
+// Convert entries (with automatic semantic deduplication and header filtering)
 const conversations = harData.log.entries.map(entry => 
   HARConverter.convertEntry(entry)
 );
 
-// Filter entries
+// Filter entries with semantic deduplication (default for LLM training)
 const filteredEntries = HARConverter.filterEntries(harData.log.entries, {
   methods: ['GET', 'POST'],
   statusCodes: [200, 201],
-  domains: ['api.example.com']
+  domains: ['api.example.com'],
+  deduplicate: true // semantic deduplication
 });
+
+// Filter entries without deduplication
+const allEntries = HARConverter.filterEntries(harData.log.entries, {
+  methods: ['GET', 'POST'],
+  deduplicate: false
+});
+
+// Manual semantic deduplication for LLM training
+const semanticallyUnique = HARConverter.deduplicateEntries(harData.log.entries);
+
+// Manual exact deduplication
+const exactlyUnique = HARConverter.removeExactDuplicates(harData.log.entries);
 
 // Generate different formats
 const markdown = Formatters.toMarkdown(conversations);
@@ -120,7 +183,7 @@ const summary = HARConverter.generateSummary(harData.log.entries);
 
 ### Request
 **Method:** GET
-**URL:** https://api.example.com/users
+**URL:** https://api.example.com/users/1
 
 **Headers:**
 - authorization: Bearer token123
@@ -131,12 +194,12 @@ const summary = HARConverter.generateSummary(harData.log.entries);
 
 **Headers:**
 - content-type: application/json
-- cache-control: no-cache
 
 **Body:**
 ```json
 {
-  "users": [...]
+  "id": 1,
+  "name": "John Doe"
 }
 ```
 ```
@@ -147,7 +210,7 @@ const summary = HARConverter.generateSummary(harData.log.entries);
   {
     "request": {
       "method": "GET",
-      "url": "https://api.example.com/users",
+      "url": "https://api.example.com/users/1",
       "headers": {
         "authorization": "Bearer token123",
         "content-type": "application/json"
@@ -162,7 +225,7 @@ const summary = HARConverter.generateSummary(harData.log.entries);
       "headers": {
         "content-type": "application/json"
       },
-      "body": "{\"users\":[...]}",
+      "body": "{\"id\":1,\"name\":\"John Doe\"}",
       "contentType": "application/json"
     },
     "timestamp": "2023-12-01T10:30:00.000Z",
@@ -173,14 +236,16 @@ const summary = HARConverter.generateSummary(harData.log.entries);
 
 ### cURL Format
 ```bash
-# GET https://api.example.com/users
-curl -X GET -H "authorization: Bearer token123" -H "content-type: application/json" "https://api.example.com/users"
+# GET https://api.example.com/users/1
+curl -X GET -H "authorization: Bearer token123" -H "content-type: application/json" "https://api.example.com/users/1"
 ```
 
 ## Features
 
 - ✅ Convert HAR files to multiple LLM-friendly formats
 - ✅ Filter requests by method, status code, domain, and duration
+- ✅ **Semantic deduplication optimized for LLM training**
+- ✅ **Automatic filtering of useless headers**
 - ✅ Generate cURL commands for request replay
 - ✅ Create conversation logs for LLM training
 - ✅ Provide detailed summaries and statistics
@@ -210,3 +275,5 @@ MIT
 - Support for multiple output formats
 - Filtering capabilities
 - CLI and programmatic APIs
+- Semantic deduplication for LLM training
+- Automatic header filtering
